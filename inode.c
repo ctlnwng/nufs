@@ -1,6 +1,7 @@
 #include "inode.h"
 #include "pages.h"
 #include "bitmap.h"
+#include "util.h"
 
 /*
 typedef struct inode {
@@ -11,6 +12,8 @@ typedef struct inode {
     int iptr; // single indirect pointer
 } inode;
 */
+
+const int NUM_DIR_PTRS = 2;
 
 inode*
 get_inode(int inum)
@@ -61,13 +64,30 @@ int
 grow_inode(inode* node, int size)
 {
     int new_size = node->size + size;
-    if (new_size <= 4096) {
+    
+    int old_num_pages = bytes_to_pages(node->size);
+    int new_num_pages = bytes_to_pages(new_size);
+    int pages_to_grow = new_num_pages - old_num_pages;
+
+    if (pages_to_grow > 0) {
+        for (int ii = 0; ii < pages_to_grow; ++ii) {
+            int pnum = alloc_page();
+            
+            if (old_num_pages + ii > NUM_DIR_PTRS) {
+                // indirect stuff
+            }
+            else {
+                inode->ptrs[old_num_pages + ii] = pnum;
+            }
+
+        }
+    }
+    else {
         node->size = new_size;
         return new_size;
     }
-    else {
-        return -1;
-    }
+     
+    return -1;
 }
 
 int

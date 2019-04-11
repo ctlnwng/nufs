@@ -214,10 +214,9 @@ nufs_write(const char *path, const char *buf, size_t size, off_t offset, struct 
     int pnum = file_inode->ptrs[0];
     void* page = pages_get_page(pnum);
 
-    memcpy(page + file_inode->size, buf, size);
-
     if (grow_inode(file_inode, size) != -1) {
         rv = size;
+        memcpy(page + file_inode->size, buf, size);
     }
 
     printf("write(%s, %ld bytes, @+%ld) -> %d\n", path, size, offset, rv);
