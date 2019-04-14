@@ -23,7 +23,7 @@ get_inode(int inum)
 }
 
 int
-alloc_inode()
+alloc_inode(int mode)
 {
     void* ibm = get_inode_bitmap();
 
@@ -34,7 +34,7 @@ alloc_inode()
 
             inode* new_inode = get_inode(ii);
             new_inode->refs = 1;
-            new_inode->mode = 0100644;
+            new_inode->mode = mode;
             new_inode->size = 0;
             new_inode->iptr = 0;
             return ii;

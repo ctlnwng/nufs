@@ -11,6 +11,7 @@
 #include "pages.h"
 #include "inode.h"
 #include "directory.h"
+#include "util.h"
 
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
@@ -31,15 +32,23 @@ int
 nufs_getattr(const char *path, struct stat *st)
 {
     int rv = 0;
-    inode* root_inode = get_inode(0);
+    char* parent_path = get_parent_path(path);
+    int parent_inum = tree_lookup(parent_path);
+    free(parent_path);
+
+    if (parent_inum == -1) {
+        return -ENOENT;
+    }
+
+    inode* node = get_inode(parent_inum);
 
     if (strcmp(path, "/") == 0) {
-        st->st_mode = root_inode->mode; // directory
-        st->st_size = root_inode->size;
+        st->st_mode = node->mode; // directory
+        st->st_size = node->size;
         st->st_uid = getuid();
     }
-    else if (directory_lookup(get_inode(0), path) != -1) {
-        inode* file_inode = get_inode(directory_lookup(root_inode, path));
+    else if (directory_lookup(node, path) != -1) {
+        inode* file_inode = get_inode(directory_lookup(node, path));
         
         st->st_mode = file_inode->mode; // regular file
         st->st_size = file_inode->size;
@@ -62,20 +71,24 @@ nufs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     struct stat st;
     int rv;
 
-    rv = nufs_getattr("/", &st);
+    rv = nufs_getattr(path, &st);
     assert(rv == 0);
     filler(buf, ".", &st, 0);
 
-    inode* root_inode = get_inode(0);
-    void* directory = pages_get_page(root_inode->ptrs[0]);
+    char* parent_path = get_parent_path(path);
+    inode* node = get_inode(tree_lookup(parent_path));
+    free(parent_path);
 
+    // TODO: look for page in nested for loop
+    void* directory = pages_get_page(node->ptrs[0]);
+    
     // write all files in root directory to buffer
-    for (int ii = 0; ii < root_inode->size; ii += sizeof(dirent)) {
+    for (int ii = 0; ii < node->size; ii += sizeof(dirent)) {
         dirent* entry = (dirent*)(directory + ii);
 
         rv = nufs_getattr(entry->name, &st);
         assert(rv == 0);
-        filler(buf, entry->name + 1, &st, 0);
+        filler(buf, get_relative_path(entry->name), &st, 0);
     }
 
     printf("readdir(%s) -> %d\n", path, rv);
@@ -90,10 +103,13 @@ nufs_mknod(const char *path, mode_t mode, dev_t rdev)
     int rv = -ENOENT;
     struct stat st;
  
-    int inum = alloc_inode();
-    inode* root_inode = get_inode(0);
+    int inum = alloc_inode(mode);
     
-    if (directory_put(root_inode, path, inum) != -1) {
+    char* parent_path = get_parent_path(path);
+    inode* node = get_inode(tree_lookup(parent_path));
+    free(parent_path);
+
+    if (directory_put(node, path, inum) != -1) {
         rv = nufs_getattr(path, &st);
     }
 
@@ -115,7 +131,18 @@ int
 nufs_unlink(const char *path)
 {
     int rv;
-    rv = directory_delete(get_inode(0), path);    
+    struct stat st;
+    rv = nufs_getattr(path, &st);
+
+    if (rv == -ENOENT) {
+        return rv;
+    }
+
+    char* parent_path = get_parent_path(path);
+    inode* node = get_inode(tree_lookup(parent_path));
+    free(parent_path);
+
+    rv = directory_delete(node, path);    
 
     if (rv == -1) {
         rv = -ENOENT;
@@ -136,7 +163,45 @@ nufs_link(const char *from, const char *to)
 int
 nufs_rmdir(const char *path)
 {
-    int rv = -1;
+    int rv;
+    struct stat st;
+    rv = nufs_getattr(path, &st);
+
+    if (rv == -ENOENT) {
+        return rv;
+    }
+
+    int inum = tree_lookup(path);
+    inode* dir_node = get_inode(inum);
+    
+    // TODO: nested for loop for dir pages
+    void* directory = pages_get_page(dir_node->ptrs[0]);
+
+    // recursively remove children
+    for (int ii = 0; ii < dir_node->size; ii += sizeof(dirent)) {
+        dirent* entry = (dirent*)(directory + ii);
+        inode* entry_node = get_inode(entry->inum);
+
+        if (entry_node->mode == 0100644) {
+            nufs_unlink(entry->name);
+        }
+        else {
+            nufs_rmdir(entry->name);
+        }
+    }
+
+    // find parent inode
+    char* parent_path = get_parent_path(path);
+    inode* node = get_inode(tree_lookup(parent_path));
+    free(parent_path);
+
+    // delete dir from parent
+    rv = directory_delete(node, path);
+    
+    if (rv == -1) {
+        rv = -ENOENT;
+    }
+
     printf("rmdir(%s) -> %d\n", path, rv);
     return rv;
 }
@@ -147,7 +212,12 @@ int
 nufs_rename(const char *from, const char *to)
 {
     int rv;
-    rv = directory_rename_entry(get_inode(0), from, to);
+    
+    char* parent_path = get_parent_path(from);
+    inode* node = get_inode(tree_lookup(parent_path));
+    free(parent_path);
+
+    rv = directory_rename_entry(node, from, to);
 
     if (rv == -1) {
         rv = -ENOENT;
@@ -203,12 +273,11 @@ nufs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_fi
     if (rv == -ENOENT) {
         return rv;
     }
+     
+    inode* node = get_inode(tree_lookup(path));
     
-    int inum = directory_lookup(get_inode(0), path);
-    inode* inode = get_inode(inum);
-    size = size > inode->size ? inode->size : size;
-    
-    read_from_file(inode, buf, size, offset);
+    size = size > node->size ? node->size : size;
+    read_from_file(node, buf, size, offset);
 
     rv = size;
 
@@ -221,17 +290,12 @@ int
 nufs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
     int rv = -ENOENT;
-
-    inode* root_inode = get_inode(0);
-    int inum = directory_lookup(root_inode, path);
-
-    inode* file_inode = get_inode(inum);
-    int pnum = file_inode->ptrs[0];
-    void* page = pages_get_page(pnum);
+    
+    inode* node = get_inode(tree_lookup(path));
 
     // what if offset is > file_inode size
-    if (grow_inode(file_inode, size) != -1) {
-        write_to_file(file_inode, buf, size, offset);
+    if (grow_inode(node, (offset + size - node->size)) != -1) {
+        write_to_file(node, buf, size, offset);
         rv = size;
     }
 

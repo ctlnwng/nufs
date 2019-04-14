@@ -4,6 +4,7 @@
 #include "inode.h"
 #include "directory.h"
 #include "util.h"
+#include "slist.h"
 
 const int MAX_NAME_LEN = 48;
 
@@ -112,9 +113,38 @@ directory_delete(inode* dd, const char* name)
     return rv;
 }
 
-//void directory_init(int pnum, char* name);
-//int tree_lookup(const char* path);
-//slist* directory_list(const char* path)
+slist* directory_list(const char* path) {
+    slist* list = s_cons(path, list);
+
+    for (int ii = strlen(path) - 1; ii >= 0; --ii) {
+        if (ii != 0 && path[ii] == '/') {
+            char str[MAX_NAME_LEN];
+            memcpy(str, path, ii);
+            list = s_cons(str, list);
+        }
+    }
+
+    return s_cons(path, list);
+}
+
+int tree_lookup(const char* path) {
+    if (strcmp(path, "/") == 0) {
+        return 0;
+    }
+
+    slist* dir_list = directory_list(path);
+    slist* list_start = dir_list;
+
+    int inum = 0;
+    while (dir_list != 0 && inum != -1) {
+        inode* cur_dir = get_inode(inum);
+        inum = directory_lookup(cur_dir, dir_list->data);
+        dir_list = dir_list->next;
+    }
+
+    s_free(list_start);
+    return inum;
+}
+
 //void print_directory(inode* dd);
-
-
+//void directory_init(int pnum, char* name);

@@ -4,6 +4,10 @@ mkdir
 1. calls mknod 
 2. edit alloc_inode to take in mode
 
+Creating nested directories
+
+
+
 Removing directory (rmdir)
 
 rmdir
@@ -11,8 +15,9 @@ rmdir
 2. loop through contents of dir
     - unlink if file
     - rmdir if dir
-3. free page with dirents
-4. free inode of dir
+3. free page with dirents (done in step 5)
+4. free inode of dir (done in step 5)
 5. update dirent list of parent dir (directory_delete)
     - create function to trim path to parent dir
     - get inode of parent dir
+    - directory_delete dir 
