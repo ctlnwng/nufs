@@ -53,39 +53,38 @@ join_to_path(char* buf, char* item)
     strcat(buf, item);
 }
 
-static char*
-get_parent_path(const char* buf)
+static void
+get_parent_path(const char* buf, char parent_path[])
 {
+    memset(parent_path, 0, 48);
     int nn = strlen(buf);
-    char* trimmed_path = malloc(sizeof(char) * 48);
 
     for (int ii = nn - 1; ii >= 0; --ii) {
         if (buf[ii] == '/' && ii != 0) {
-            memcpy(trimmed_path, buf, ii);
-            return trimmed_path;
+            memcpy(parent_path, buf, ii);
+            parent_path[ii] = '\0';
+            return;
         }
         if (ii == 0) {
-            memcpy(trimmed_path, buf, 1);
+            memcpy(parent_path, buf, 1);
+            parent_path[1] = '\0';
         }
     }
-
-    return trimmed_path;
 }
 
-static char*
-get_relative_path(const char* buf)
+static void
+get_relative_path(const char* buf, char relative_path[])
 {
+    memset(relative_path, 0, 48);
     int nn = strlen(buf);
-    char* relative_path = malloc(sizeof(char) * 48);
 
     for (int ii = nn - 1; ii >= 0; --ii) {
         if (buf[ii] == '/') {
-            memcpy(relative_path, (buf + ii), nn - ii);
-            return relative_path;
+            memcpy(relative_path, (buf + ii + 1), (nn - ii - 1));
+            relative_path[nn - ii] = '\0';
+            return;
         }
     }
-
-    return relative_path;
 }
 
 #endif

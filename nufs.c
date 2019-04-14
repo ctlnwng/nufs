@@ -32,9 +32,9 @@ int
 nufs_getattr(const char *path, struct stat *st)
 {
     int rv = 0;
-    char* parent_path = get_parent_path(path);
+    char parent_path[48];
+    get_parent_path(path, parent_path);
     int parent_inum = tree_lookup(parent_path);
-    free(parent_path);
 
     if (parent_inum == -1) {
         return -ENOENT;
@@ -74,10 +74,10 @@ nufs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     rv = nufs_getattr(path, &st);
     assert(rv == 0);
     filler(buf, ".", &st, 0);
-
-    char* parent_path = get_parent_path(path);
-    inode* node = get_inode(tree_lookup(parent_path));
-    free(parent_path);
+    
+//    char parent_path[48];
+//    get_parent_path(path, parent_path);
+    inode* node = get_inode(tree_lookup(path));
 
     // TODO: look for page in nested for loop
     void* directory = pages_get_page(node->ptrs[0]);
@@ -88,7 +88,10 @@ nufs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
         rv = nufs_getattr(entry->name, &st);
         assert(rv == 0);
-        filler(buf, get_relative_path(entry->name), &st, 0);
+
+        char relative_path[48];
+        get_relative_path(entry->name, relative_path);
+        filler(buf, relative_path, &st, 0);
     }
 
     printf("readdir(%s) -> %d\n", path, rv);
@@ -102,12 +105,16 @@ nufs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
     int rv = -ENOENT;
     struct stat st;
- 
-    int inum = alloc_inode(mode);
     
-    char* parent_path = get_parent_path(path);
+    if (nufs_getattr(path, &st) == 0) {
+        return -1;
+    }
+
+    int inum = alloc_inode(mode);
+
+    char parent_path[48];
+    get_parent_path(path, parent_path);
     inode* node = get_inode(tree_lookup(parent_path));
-    free(parent_path);
 
     if (directory_put(node, path, inum) != -1) {
         rv = nufs_getattr(path, &st);
@@ -138,9 +145,9 @@ nufs_unlink(const char *path)
         return rv;
     }
 
-    char* parent_path = get_parent_path(path);
+    char parent_path[48];
+    get_parent_path(path, parent_path);
     inode* node = get_inode(tree_lookup(parent_path));
-    free(parent_path);
 
     rv = directory_delete(node, path);    
 
@@ -191,9 +198,9 @@ nufs_rmdir(const char *path)
     }
 
     // find parent inode
-    char* parent_path = get_parent_path(path);
+    char parent_path[48];
+    get_parent_path(path, parent_path);
     inode* node = get_inode(tree_lookup(parent_path));
-    free(parent_path);
 
     // delete dir from parent
     rv = directory_delete(node, path);
@@ -213,9 +220,9 @@ nufs_rename(const char *from, const char *to)
 {
     int rv;
     
-    char* parent_path = get_parent_path(from);
+    char parent_path[48];
+    get_parent_path(from, parent_path);
     inode* node = get_inode(tree_lookup(parent_path));
-    free(parent_path);
 
     rv = directory_rename_entry(node, from, to);
 
@@ -247,7 +254,15 @@ nufs_truncate(const char *path, off_t size)
     
     int inum = directory_lookup(get_inode(0), path);
     inode* inode = get_inode(inum);
-    rv = shrink_inode(inode, size);
+
+    if (inode->size > size) {
+        rv = shrink_inode(inode, size);
+    }
+    else {
+        rv = grow_inode(inode, size);
+    }
+
+    rv = rv != -1 ? 0 : -1;
 
     printf("truncate(%s, %ld bytes) -> %d\n", path, size, rv);
     return rv;
@@ -289,15 +304,23 @@ nufs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_fi
 int
 nufs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-    int rv = -ENOENT;
+    struct stat st;
+    int rv = nufs_getattr(path, &st);
+    if (rv == -ENOENT) {
+        return rv;
+    }
     
     inode* node = get_inode(tree_lookup(path));
 
-    // what if offset is > file_inode size
-    if (grow_inode(node, (offset + size - node->size)) != -1) {
-        write_to_file(node, buf, size, offset);
-        rv = size;
-    }
+    if ((offset + size) > node->size) {
+        rv = grow_inode(node, offset + size - node->size);
+        if (rv == -1) {
+            return rv;
+        }
+    }   
+
+    write_to_file(node, buf, size, offset);
+    rv = size;
 
     printf("write(%s, %ld bytes, @+%ld) -> %d\n", path, size, offset, rv);
     return rv;

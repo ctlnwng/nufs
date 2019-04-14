@@ -114,17 +114,18 @@ directory_delete(inode* dd, const char* name)
 }
 
 slist* directory_list(const char* path) {
-    slist* list = s_cons(path, list);
+    slist* list = s_cons(path, 0);
 
     for (int ii = strlen(path) - 1; ii >= 0; --ii) {
         if (ii != 0 && path[ii] == '/') {
             char str[MAX_NAME_LEN];
             memcpy(str, path, ii);
+            str[ii] = '\0';
             list = s_cons(str, list);
         }
     }
 
-    return s_cons(path, list);
+    return list;
 }
 
 int tree_lookup(const char* path) {
@@ -141,7 +142,7 @@ int tree_lookup(const char* path) {
         inum = directory_lookup(cur_dir, dir_list->data);
         dir_list = dir_list->next;
     }
-
+    
     s_free(list_start);
     return inum;
 }
