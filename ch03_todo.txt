@@ -1,0 +1,12 @@
+TODO:
+
+- Abstract inode_alloc page allocation to storage.c
+- Have files > 4k
+  - write_node
+  - only grow node when offset + size > node->size
+  - manage direct and indirect pointers
+	- if direct pointers are full: 
+		if indirect pointer is 0: allocate new page for indirect pointer and alloc new page + idx entry in indirect pointer page
+			AND grow file size by 4k because of indirect pointer. (maybe?)
+        if indirect pointer exists: find new page index though old_num_pages+ii, go into indirect pointer, alloc page and add idx entry
+ 		
