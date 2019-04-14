@@ -20,5 +20,8 @@ void free_inode();
 int grow_inode(inode* node, int size);
 int shrink_inode(inode* node, int size);
 int inode_get_pnum(inode* node, int fpn);
+int grow_iptr(int* iptr, int pnum, int num_iptrs);
+void write_to_file(inode* node, const char *buf, size_t size, off_t offset);
+void read_from_file(inode* node, char *buf, size_t size, off_t offset);
 
 #endif

@@ -55,16 +55,16 @@ int
 directory_put(inode* dd, const char* name, int inum)
 {
     int rv = -1;
-    void* directory = pages_get_page(dd->ptrs[0]);
-    
-    dirent* entry = (dirent*)(directory + dd->size);
-    char* entry_name = entry->name;
-
-    memset(entry_name, '\0', MAX_NAME_LEN);
-    strcpy(entry_name, name);
-    entry->inum = inum;
-
     if (grow_inode(dd, sizeof(dirent)) != -1) {
+        void* directory = pages_get_page(dd->ptrs[0]);
+    
+        dirent* entry = (dirent*)(directory + (dd->size - sizeof(dirent)));
+        char* entry_name = entry->name;
+
+        memset(entry_name, '\0', MAX_NAME_LEN);
+        strcpy(entry_name, name);
+        entry->inum = inum;
+
         rv = 0;
     }
     

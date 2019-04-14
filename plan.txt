@@ -1,0 +1,18 @@
+Creating directories (mkdir)
+
+mkdir
+1. calls mknod 
+2. edit alloc_inode to take in mode
+
+Removing directory (rmdir)
+
+rmdir
+1. get inode of dir
+2. loop through contents of dir
+    - unlink if file
+    - rmdir if dir
+3. free page with dirents
+4. free inode of dir
+5. update dirent list of parent dir (directory_delete)
+    - create function to trim path to parent dir
+    - get inode of parent dir

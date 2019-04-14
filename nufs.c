@@ -168,7 +168,17 @@ nufs_chmod(const char *path, mode_t mode)
 int
 nufs_truncate(const char *path, off_t size)
 {
-    int rv = 0;
+    struct stat st;
+    int rv = nufs_getattr(path, &st);
+
+    if (rv == -ENOENT) {
+        return rv;
+    }
+    
+    int inum = directory_lookup(get_inode(0), path);
+    inode* inode = get_inode(inum);
+    rv = shrink_inode(inode, size);
+
     printf("truncate(%s, %ld bytes) -> %d\n", path, size, rv);
     return rv;
 }
@@ -188,14 +198,19 @@ nufs_open(const char *path, struct fuse_file_info *fi)
 int
 nufs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
+    struct stat st;
+    int rv = nufs_getattr(path, &st);
+    if (rv == -ENOENT) {
+        return rv;
+    }
+    
     int inum = directory_lookup(get_inode(0), path);
     inode* inode = get_inode(inum);
-    int pnum = inode->ptrs[0];
+    size = size > inode->size ? inode->size : size;
+    
+    read_from_file(inode, buf, size, offset);
 
-    void* page = pages_get_page(pnum);
-    memcpy(buf, (char*)page, inode->size);
-
-    int rv = inode->size;
+    rv = size;
 
     printf("read(%s, %ld bytes, @+%ld) -> %d\n", path, size, offset, rv);
     return rv;
@@ -214,9 +229,10 @@ nufs_write(const char *path, const char *buf, size_t size, off_t offset, struct 
     int pnum = file_inode->ptrs[0];
     void* page = pages_get_page(pnum);
 
+    // what if offset is > file_inode size
     if (grow_inode(file_inode, size) != -1) {
+        write_to_file(file_inode, buf, size, offset);
         rv = size;
-        memcpy(page + file_inode->size, buf, size);
     }
 
     printf("write(%s, %ld bytes, @+%ld) -> %d\n", path, size, offset, rv);

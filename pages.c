@@ -20,7 +20,7 @@
 #include "directory.h"
 
 const int PAGE_COUNT = 256;
-const int NUFS_SIZE  = 4096 * 256; // 1MB
+const int NUFS_SIZE  = PAGE_SIZE * 256; // 1MB
 
 // 0 - bitmaps
 // 1 - inodes
@@ -53,15 +53,12 @@ pages_init(const char* path)
     root_inode->refs = 1;
     root_inode->mode = 040755;
     root_inode->size = 0;
-    root_inode->ptrs[0] = 2;
-    root_inode->ptrs[1] = -1;
     root_inode->iptr = 0;
 
     void* pbm = get_pages_bitmap();
 
     bitmap_put(pbm, 0, 1); // bitmap page
     bitmap_put(pbm, 1, 1); // inodes page
-    bitmap_put(pbm, 2, 1); // root directory
 }
 
 void

@@ -3,6 +3,8 @@
 #ifndef PAGES_H
 #define PAGES_H
 
+#define PAGE_SIZE 4096
+
 #include <stdio.h>
 
 void pages_init(const char* path);
