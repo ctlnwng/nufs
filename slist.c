@@ -32,6 +32,7 @@ s_free(slist* xs)
     }
 }
 
+/*
 slist*
 s_split(const char* text, char delim)
 {
@@ -56,4 +57,4 @@ s_split(const char* text, char delim)
 
     return s_cons(part, 0, rest);
 }
-
+*/

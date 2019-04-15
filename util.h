@@ -4,6 +4,7 @@
 #define UTIL_H
 
 #include <string.h>
+#include <stdlib.h>
 
 static int
 streq(const char* aa, const char* bb)
@@ -52,6 +53,38 @@ join_to_path(char* buf, char* item)
     strcat(buf, item);
 }
 
+static void
+get_parent_path(const char* buf, char parent_path[])
+{
+    memset(parent_path, 0, 48);
+    int nn = strlen(buf);
 
+    for (int ii = nn - 1; ii >= 0; --ii) {
+        if (buf[ii] == '/' && ii != 0) {
+            memcpy(parent_path, buf, ii);
+            parent_path[ii] = '\0';
+            return;
+        }
+        if (ii == 0) {
+            memcpy(parent_path, buf, 1);
+            parent_path[1] = '\0';
+        }
+    }
+}
+
+static void
+get_relative_path(const char* buf, char relative_path[])
+{
+    memset(relative_path, 0, 48);
+    int nn = strlen(buf);
+
+    for (int ii = nn - 1; ii >= 0; --ii) {
+        if (buf[ii] == '/') {
+            memcpy(relative_path, (buf + ii + 1), (nn - ii - 1));
+            relative_path[nn - ii] = '\0';
+            return;
+        }
+    }
+}
 
 #endif

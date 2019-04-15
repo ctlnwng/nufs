@@ -4,6 +4,8 @@ mkdir
 1. calls mknod 
 2. edit alloc_inode to take in mode
 
+Creating nested directories
+
 Removing directory (rmdir)
 
 rmdir
@@ -11,8 +13,34 @@ rmdir
 2. loop through contents of dir
     - unlink if file
     - rmdir if dir
-3. free page with dirents
-4. free inode of dir
+3. free page with dirents (done in step 5)
+4. free inode of dir (done in step 5)
 5. update dirent list of parent dir (directory_delete)
     - create function to trim path to parent dir
     - get inode of parent dir
+   - directory_delete dir 
+
+Hard links
+
+nufs_link(from, to)
+1. check if 'to' exists, check that 'from' does NOT exist
+2. get inode for 'to'
+    - increase refs by 1
+3. get parent directory inode for 'from'
+4. directory_put inum of 'to' with name of 'from'
+
+update unlink
+1. decrement refs of inode by one
+2. delete inode ONLY IF refs == 0
+
+
+Symlinks
+
+create symlink(to, from)
+1. check if 'to' exists, check that 'from' does NOT exist
+2. mknod(from) (pass in symlink mode 120000)
+3. write 'to' (path) to 'from'
+
+create readlink(path, buf, size)
+1. read 48 bytes from path, create buffer
+2. nufs_read(new buffer, buf, size)
