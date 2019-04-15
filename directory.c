@@ -90,13 +90,13 @@ directory_delete(inode* dd, const char* name)
             break;
         }
     }
-
+/*
     if (file_inum == -1) {
         return rv;
     }
     
     free_inode(file_inum);
-
+*/
     for (int ii = file_pos + sizeof(dirent); ii < dd->size; ii += sizeof(dirent)) {
         dirent* entry = (dirent*)(directory + ii);
         dirent* prev_entry = (dirent*)(directory + ii - sizeof(dirent));

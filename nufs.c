@@ -45,6 +45,7 @@ nufs_getattr(const char *path, struct stat *st)
     if (strcmp(path, "/") == 0) {
         st->st_mode = node->mode; // directory
         st->st_size = node->size;
+        st->st_nlink = node->refs;
         st->st_uid = getuid();
     }
     else if (directory_lookup(node, path) != -1) {
@@ -52,6 +53,7 @@ nufs_getattr(const char *path, struct stat *st)
         
         st->st_mode = file_inode->mode; // regular file
         st->st_size = file_inode->size;
+        st->st_nlink = file_inode->refs;
         st->st_uid = getuid();
     }
     else {
@@ -147,12 +149,19 @@ nufs_unlink(const char *path)
 
     char parent_path[48];
     get_parent_path(path, parent_path);
-    inode* node = get_inode(tree_lookup(parent_path));
+    inode* parent_node = get_inode(tree_lookup(parent_path));
 
-    rv = directory_delete(node, path);    
+    rv = directory_delete(parent_node, path); 
 
     if (rv == -1) {
         rv = -ENOENT;
+    }
+
+    int path_inum = tree_lookup(path);
+    inode* path_node = get_inode(path_inum);
+    
+    if (path_node->refs == 1) {
+        free_inode(path_inum);
     }
 
     printf("unlink(%s) -> %d\n", path, rv);
@@ -163,6 +172,36 @@ int
 nufs_link(const char *from, const char *to)
 {
     int rv = -1;
+    struct stat from_st;
+    struct stat to_st;
+
+    // make sure 'from' exists
+    rv = nufs_getattr(from, &from_st);
+    if (rv == -ENOENT) {
+        return rv;
+    }
+
+    // make sure 'to' doesn't exist
+    int to_rv = nufs_getattr(to, &to_st);
+    assert(to_rv == -ENOENT);
+    if (to_rv != -ENOENT) {
+        return -1;
+    }
+
+    // update refs for 'from'
+    int from_inum = tree_lookup(from);
+    inode* from_node = get_inode(from_inum);
+    from_node->refs += 1;
+
+    // add dirent
+    char parent_path[48];
+    get_parent_path(to, parent_path);
+    inode* node = get_inode(tree_lookup(parent_path));
+
+    if (directory_put(node, to, from_inum) != -1) {
+        rv = nufs_getattr(to, &to_st);
+    }
+
     printf("link(%s => %s) -> %d\n", from, to, rv);
 	return rv;
 }
