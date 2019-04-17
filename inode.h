@@ -3,6 +3,8 @@
 #ifndef INODE_H
 #define INODE_H
 
+#include <time.h>
+
 #include "pages.h"
 
 typedef struct inode {
@@ -11,6 +13,9 @@ typedef struct inode {
     int size; // bytes
     int ptrs[2]; // direct pointers
     int iptr; // single indirect pointer
+    time_t atime;
+    time_t mtime;
+    time_t ctime;
 } inode;
 
 void print_inode(inode* node);

@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <bsd/string.h>
 #include <assert.h>
+#include <time.h>
 #include "pages.h"
 #include "inode.h"
 #include "directory.h"
@@ -47,14 +48,24 @@ nufs_getattr(const char *path, struct stat *st)
         st->st_size = node->size;
         st->st_nlink = node->refs;
         st->st_uid = getuid();
+        st->st_gid = getgid();
+        st->st_blksize = PAGE_SIZE;
     }
     else if (directory_lookup(node, path) != -1) {
         inode* file_inode = get_inode(directory_lookup(node, path));
-        
+
         st->st_mode = file_inode->mode; // regular file
         st->st_size = file_inode->size;
         st->st_nlink = file_inode->refs;
         st->st_uid = getuid();
+        st->st_gid = getgid();
+        st->st_blksize = PAGE_SIZE;
+        st->st_blocks = bytes_to_pages(file_inode->size);
+
+        st->st_atime = file_inode->atime;
+        st->st_mtime = file_inode->mtime;
+        st->st_ctime = file_inode->ctime;
+
     }
     else {
         rv = -ENOENT;
@@ -112,16 +123,22 @@ nufs_mknod(const char *path, mode_t mode, dev_t rdev)
         return -1;
     }
 
+
     int inum = alloc_inode(mode);
 
+    inode* node = get_inode(inum);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    node->ctime = ts.tv_sec;
+    
     char parent_path[48];
     get_parent_path(path, parent_path);
-    inode* node = get_inode(tree_lookup(parent_path));
+    inode* parent_dir = get_inode(tree_lookup(parent_path));
 
-    if (directory_put(node, path, inum) != -1) {
+    if (directory_put(parent_dir, path, inum) != -1) {
         rv = nufs_getattr(path, &st);
     }
-
+    
     printf("mknod(%s, %04o) -> %d\n", path, mode, rv);
     return rv;
 }
@@ -264,6 +281,10 @@ nufs_rename(const char *from, const char *to)
     inode* node = get_inode(tree_lookup(parent_path));
 
     rv = directory_rename_entry(node, from, to);
+  
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    node->ctime = ts.tv_sec;
 
     if (rv == -1) {
         rv = -ENOENT;
@@ -276,7 +297,19 @@ nufs_rename(const char *from, const char *to)
 int
 nufs_chmod(const char *path, mode_t mode)
 {
-    int rv = -1;
+    struct stat st;
+    int rv = nufs_getattr(path, &st);
+    if (rv == -ENOENT) {
+        return rv;
+    }
+
+    inode* node = get_inode(tree_lookup(path));
+    node->mode = mode;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    node->ctime = ts.tv_sec;
+
     printf("chmod(%s, %04o) -> %d\n", path, mode, rv);
     return rv;
 }
@@ -313,7 +346,8 @@ nufs_truncate(const char *path, off_t size)
 int
 nufs_open(const char *path, struct fuse_file_info *fi)
 {
-    int rv = 0;
+    struct stat st;
+    int rv = nufs_getattr(path, &st);
     printf("open(%s) -> %d\n", path, rv);
     return rv;
 }
@@ -332,6 +366,10 @@ nufs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_fi
     
     size = size > node->size ? node->size : size;
     read_from_file(node, buf, size, offset);
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    node->atime = ts.tv_sec;
 
     rv = size;
 
@@ -359,6 +397,12 @@ nufs_write(const char *path, const char *buf, size_t size, off_t offset, struct 
     }   
 
     write_to_file(node, buf, size, offset);
+    
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    node->mtime = ts.tv_sec;
+    node->atime = ts.tv_sec;
+
     rv = size;
 
     printf("write(%s, %ld bytes, @+%ld) -> %d\n", path, size, offset, rv);
@@ -369,7 +413,18 @@ nufs_write(const char *path, const char *buf, size_t size, off_t offset, struct 
 int
 nufs_utimens(const char* path, const struct timespec ts[2])
 {
-    int rv = 0;
+    struct stat st;
+    int rv = nufs_getattr(path, &st);
+    if (rv == -ENOENT) {
+        return rv;
+    }
+
+    rv = 0;
+
+    inode* node = get_inode(tree_lookup(path));
+    node->atime = ts[0].tv_sec;
+    node->mtime = ts[1].tv_sec;
+
     printf("utimens(%s, [%ld, %ld; %ld %ld]) -> %d\n",
            path, ts[0].tv_sec, ts[0].tv_nsec, ts[1].tv_sec, ts[1].tv_nsec, rv);
 	return rv;
@@ -383,6 +438,46 @@ nufs_ioctl(const char* path, int cmd, void* arg, struct fuse_file_info* fi,
     int rv = -1;
     printf("ioctl(%s, %d, ...) -> %d\n", path, cmd, rv);
     return rv;
+}
+
+// Only supports absolute paths the first argument
+int
+nufs_symlink(const char* to, const char* from)
+{
+    int rv = -ENOENT;
+
+    struct stat st;
+    int from_exists = nufs_getattr(from, &st);
+
+    // "to" is a relative path, so we must concat it to from's parent dir
+    char from_parent_path[48];
+    get_parent_path(from, from_parent_path);
+    int to_exists = tree_lookup(strcat(from_parent_path, to));
+
+    if (from_exists != -ENOENT || to_exists == -1) {
+        return rv;
+    }
+
+    if (nufs_mknod(from, 0120000, 0) == 0) {
+        char buf[48];
+        strcpy(buf, to);
+        rv = nufs_write(from, buf, strlen(buf), 0, 0);
+        rv = (strlen(buf) == rv) ? 0 : -1;
+    }
+
+    return rv;
+}
+
+int
+nufs_readlink(const char* path, char* buf, size_t size)
+{
+    struct stat st;
+    if (nufs_getattr(path, &st) == -ENOENT) {
+       return -ENOENT;
+    }
+
+    nufs_read(path, buf, size, 0, 0);
+    return 0;
 }
 
 void
@@ -405,6 +500,8 @@ nufs_init_ops(struct fuse_operations* ops)
     ops->write    = nufs_write;
     ops->utimens  = nufs_utimens;
     ops->ioctl    = nufs_ioctl;
+    ops->symlink  = nufs_symlink;
+    ops->readlink = nufs_readlink;
 };
 
 struct fuse_operations nufs_ops;

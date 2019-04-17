@@ -10,6 +10,9 @@ typedef struct inode {
     int size; // bytes
     int ptrs[2]; // direct pointers
     int iptr; // single indirect pointer
+    time_t atime; // access time
+    time_t mtime; // modified time
+    time_t ctime; // changed time
 } inode;
 */
 
